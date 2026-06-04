@@ -1,0 +1,472 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — {{ assessment.assessment_name }} — CDO DebtLens{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-breadcrumb">
+  <a href="/">Upload</a>
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"/></svg>
+  Dashboard
+</div>
+
+<div class="flex-between page-header" style="flex-wrap:wrap;gap:12px">
+  <div>
+    <h1 id="dashTitle">Loading…</h1>
+    <p id="dashSub">—</p>
+  </div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <a href="/" class="btn btn-ghost btn-sm">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 19H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5" stroke="currentColor" stroke-width="2"/><path d="M16 19h6M19 16l3 3-3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      New Assessment
+    </a>
+    <button id="dlBtn" class="btn btn-primary btn-sm" onclick="downloadReport()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 15V3M8 11l4 4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      Download Report
+    </button>
+  </div>
+</div>
+
+<!-- KPI ROW -->
+<div class="grid-4 mb-6" id="kpiRow">
+  <div class="skeleton" style="height:110px;border-radius:16px"></div>
+  <div class="skeleton" style="height:110px;border-radius:16px"></div>
+  <div class="skeleton" style="height:110px;border-radius:16px"></div>
+  <div class="skeleton" style="height:110px;border-radius:16px"></div>
+</div>
+
+<!-- ROW 2: Score Ring + Breakdown Bar + Radar -->
+<div class="grid-3 mb-6" id="row2">
+  <div class="skeleton" style="height:300px;border-radius:16px"></div>
+  <div class="skeleton" style="height:300px;border-radius:16px"></div>
+  <div class="skeleton" style="height:300px;border-radius:16px"></div>
+</div>
+
+<!-- ROW 3: Column Table + Donut -->
+<div class="grid-2 mb-6" id="row3">
+  <div class="skeleton" style="height:400px;border-radius:16px"></div>
+  <div class="skeleton" style="height:400px;border-radius:16px"></div>
+</div>
+
+<!-- ROW 4: Recommendations -->
+<div class="card mb-6" id="recsSection" style="display:none">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Recommendations</div>
+      <div class="card-sub">Prioritised actions to reduce technical debt</div>
+    </div>
+    <div id="recCount" class="badge badge-info"></div>
+  </div>
+  <div id="recsGrid" style="display:flex;flex-direction:column;gap:10px"></div>
+</div>
+
+<!-- ROW 5: Data Preview -->
+<div class="card" id="previewSection" style="display:none">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Dataset Preview</div>
+      <div class="card-sub">First 20 rows of the uploaded dataset</div>
+    </div>
+  </div>
+  <div class="preview-scroll" id="previewTable"></div>
+</div>
+
+<!-- Hidden div to store assessment ID from Flask -->
+<div id="assessmentData" data-assessment-id="{{ assessment.id }}" style="display:none;"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Get assessment ID from the hidden div's data attribute
+var AID = parseInt(document.getElementById('assessmentData').getAttribute('data-assessment-id'));
+var chartInstances = {
+  radar: null,
+  donut: null
+};
+
+var COLOR_ACCENT  = '#4f8ef7';
+var COLOR_LOW     = '#22c55e';
+var COLOR_MED     = '#f59e0b';
+var COLOR_HIGH    = '#ef4444';
+var COLOR_BORDER  = 'rgba(99,120,180,0.18)';
+var COLOR_TEXT    = '#94a3b8';
+
+function scoreColor(s) {
+  if (s <= 30) return COLOR_LOW;
+  if (s <= 65) return COLOR_MED;
+  return COLOR_HIGH;
+}
+
+function badgeHtml(cat) {
+  var c = cat.toLowerCase();
+  return '<span class="badge badge-' + c + '">' + cat + '</span>';
+}
+
+// Fetch & render
+async function loadDashboard() {
+  var response = await fetch('/api/assessment/' + AID);
+  var data = await response.json();
+  var a = data.assessment;
+
+  document.title = a.assessment_name + ' — CDO DebtLens';
+  document.getElementById('dashTitle').textContent = a.assessment_name;
+  document.getElementById('dashSub').innerHTML = a.original_filename + ' &nbsp;·&nbsp; Analysed ' + a.created_at + ' &nbsp;·&nbsp; ' + badgeHtml(a.debt_category);
+
+  renderKPIs(a, data);
+  renderRow2(a, data.breakdown);
+  renderRow3(data.col_metrics, data.breakdown);
+  renderRecs(data.recommendations);
+  renderPreview(data.column_headers, data.sample_data);
+}
+
+// KPI Row
+function renderKPIs(a, data) {
+  var dupCount = a.duplicate_rows || 0;
+  var missing = 0;
+  for (var i = 0; i < data.col_metrics.length; i++) {
+    missing += data.col_metrics[i].missing_count;
+  }
+  var scoreC = scoreColor(a.debt_score);
+  var qualityScore = 100 - a.debt_score;
+  var qualityColor = qualityScore >= 70 ? COLOR_LOW : (qualityScore >= 50 ? COLOR_MED : COLOR_HIGH);
+  var dupPercent = a.total_rows > 0 ? ((dupCount / a.total_rows) * 100).toFixed(1) : '0';
+  var qualityLabel = qualityScore >= 70 ? 'Good' : (qualityScore >= 50 ? 'Moderate' : 'Poor');
+
+  document.getElementById('kpiRow').innerHTML = 
+    '<div class="kpi kpi--' + a.debt_category.toLowerCase() + '">' +
+      '<div class="kpi-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z" fill="currentColor"/><path d="M12 7v5l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>' +
+      '<div class="kpi-value" style="color:' + scoreC + '">' + a.debt_score.toFixed(1) + '</div>' +
+      '<div class="kpi-label">Debt Score <span style="font-size:.7rem;color:var(--text-muted)">/100</span></div>' +
+      '<div class="kpi-delta">' + badgeHtml(a.debt_category) + ' Debt Level</div>' +
+    '</div>' +
+    '<div class="kpi">' +
+      '<div class="kpi-icon" style="background:rgba(34,197,94,.12);color:#22c55e">' +
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 0 0 1.946-.806 3.42 3.42 0 0 1 4.438 0 3.42 3.42 0 0 0 1.946.806 3.42 3.42 0 0 1 3.138 3.138 3.42 3.42 0 0 0 .806 1.946 3.42 3.42 0 0 1 0 4.438 3.42 3.42 0 0 0-.806 1.946 3.42 3.42 0 0 1-3.138 3.138 3.42 3.42 0 0 0-1.946.806 3.42 3.42 0 0 1-4.438 0 3.42 3.42 0 0 0-1.946-.806 3.42 3.42 0 0 1-3.138-3.138 3.42 3.42 0 0 0-.806-1.946 3.42 3.42 0 0 1 0-4.438 3.42 3.42 0 0 0 .806-1.946 3.42 3.42 0 0 1 3.138-3.138z" stroke="currentColor" stroke-width="1.8"/></svg>' +
+      '</div>' +
+      '<div class="kpi-value" style="color:' + qualityColor + '">' + qualityScore.toFixed(1) + '</div>' +
+      '<div class="kpi-label">Quality Score <span style="font-size:.7rem;color:var(--text-muted)">/100</span></div>' +
+      '<div class="kpi-delta">' + qualityLabel + ' Quality</div>' +
+    '</div>' +
+    '<div class="kpi">' +
+      '<div class="kpi-icon" style="background:rgba(99,102,241,.12);color:#818cf8">' +
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="8" height="8" rx="2" stroke="currentColor" stroke-width="1.8"/><rect x="13" y="3" width="8" height="8" rx="2" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="13" width="8" height="8" rx="2" stroke="currentColor" stroke-width="1.8"/><rect x="13" y="13" width="8" height="8" rx="2" stroke="currentColor" stroke-width="1.8"/></svg>' +
+      '</div>' +
+      '<div class="kpi-value">' + a.total_rows.toLocaleString() + '</div>' +
+      '<div class="kpi-label">Total Rows</div>' +
+      '<div class="kpi-delta">' + a.total_columns + ' columns analysed</div>' +
+    '</div>' +
+    '<div class="kpi">' +
+      '<div class="kpi-icon" style="background:rgba(245,158,11,.12);color:var(--medium)">' +
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3m-1-4H9a1 1 0 0 0-1 1v4h8V4a1 1 0 0 0-1-1z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>' +
+      '</div>' +
+      '<div class="kpi-value">' + dupCount.toLocaleString() + '</div>' +
+      '<div class="kpi-label">Potential Duplicate Records</div>' +
+      '<div class="kpi-delta">' + dupPercent + '% of dataset (same business data)</div>' +
+    '</div>';
+}
+
+// Row 2: Ring + Breakdown Bar + Radar
+function renderRow2(a, breakdown) {
+  document.getElementById('row2').innerHTML = 
+    '<div class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center">' +
+      '<div class="card-title mb-4" style="text-align:center">Overall Debt Score</div>' +
+      '<svg class="score-ring-svg" width="160" height="160" viewBox="0 0 160 160">' +
+        '<circle cx="80" cy="80" r="66" fill="none" stroke="var(--bg-elevated)" stroke-width="14"/>' +
+        '<circle cx="80" cy="80" r="66" fill="none" stroke="' + scoreColor(a.debt_score) + '"' +
+          'stroke-width="14" stroke-linecap="round"' +
+          'stroke-dasharray="' + (2 * Math.PI * 66) + '"' +
+          'stroke-dashoffset="' + (2 * Math.PI * 66 * (1 - a.debt_score / 100)) + '"' +
+          'transform="rotate(-90 80 80)"' +
+          'style="transition:stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1)"/>' +
+        '<text x="80" y="75" text-anchor="middle" font-family="Syne, sans-serif" font-weight="700"' +
+              'font-size="32" fill="' + scoreColor(a.debt_score) + '">' + a.debt_score.toFixed(0) + '</text>' +
+        '<text x="80" y="98" text-anchor="middle" font-family="DM Sans, sans-serif"' +
+              'font-size="11" fill="var(--text-secondary)">out of 100</text>' +
+      '</svg>' +
+      '<div class="score-label ' + a.debt_category.toLowerCase() + '" style="margin-top:4px">' + a.debt_category + ' Technical Debt</div>' +
+    '</div>' +
+    '<div class="card">' +
+      '<div class="card-title mb-4">Debt Category Breakdown</div>' +
+      '<div id="breakdownBars" style="display:flex;flex-direction:column;gap:12px"></div>' +
+    '</div>' +
+    '<div class="card">' +
+      '<div class="card-title mb-4">Quality Radar</div>' +
+      '<div class="chart-wrap" style="position:relative;height:260px"><canvas id="radarChart"></canvas></div>' +
+    '</div>';
+
+  // Breakdown bars
+  var barsEl = document.getElementById('breakdownBars');
+  barsEl.innerHTML = '';
+  for (var i = 0; i < breakdown.length; i++) {
+    var b = breakdown[i];
+    var s = parseFloat(b.score);
+    var col = scoreColor(s);
+    barsEl.insertAdjacentHTML('beforeend', 
+      '<div>' +
+        '<div class="flex-between" style="margin-bottom:4px">' +
+          '<span style="font-size:.8rem;color:var(--text-secondary)">' + b.category + '</span>' +
+          '<span style="font-size:.8rem;font-weight:700;color:' + col + '">' + s.toFixed(1) + '</span>' +
+        '</div>' +
+        '<div class="progress-wrap">' +
+          '<div class="progress-bar" style="width:0%;background:' + col + ';transition:width 1s ease" data-target="' + s + '"></div>' +
+        '</div>' +
+        '<div style="font-size:.7rem;color:var(--text-muted);margin-top:2px">' + b.affected_columns + ' column(s) affected &nbsp;·&nbsp; weight ' + (b.weight * 100).toFixed(0) + '%</div>' +
+      '</div>');
+  }
+  
+  // Animate progress bars
+  var bars = document.querySelectorAll('.progress-bar[data-target]');
+  for (var i = 0; i < bars.length; i++) {
+    bars[i].style.width = Math.min(100, parseFloat(bars[i].dataset.target)) + '%';
+  }
+
+  // Radar chart
+  var radarLabels = [];
+  var radarVals = [];
+  for (var i = 0; i < breakdown.length; i++) {
+    radarLabels.push(breakdown[i].category);
+    radarVals.push(parseFloat(breakdown[i].score));
+  }
+
+  if (chartInstances.radar) {
+    chartInstances.radar.destroy();
+    chartInstances.radar = null;
+  }
+
+  // Use requestAnimationFrame so the card is fully laid out in the DOM
+  // before Chart.js reads the canvas dimensions
+  requestAnimationFrame(function() {
+    var canvas = document.getElementById('radarChart');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    chartInstances.radar = new Chart(ctx, {
+      type: 'radar',
+      data: {
+        labels: radarLabels,
+        datasets: [{
+          label: 'Debt Score',
+          data: radarVals,
+          backgroundColor: 'rgba(79,142,247,0.15)',
+          borderColor: COLOR_ACCENT,
+          pointBackgroundColor: COLOR_ACCENT,
+          pointBorderColor: '#fff',
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          r: {
+            min: 0,
+            suggestedMax: Math.max(30, Math.ceil(Math.max.apply(null, radarVals) * 1.3)),
+            ticks: {
+              maxTicksLimit: 5,
+              color: COLOR_TEXT,
+              font: { size: 10 },
+              backdropColor: 'transparent'
+            },
+            grid: { color: COLOR_BORDER },
+            pointLabels: { font: { size: 10 }, color: COLOR_TEXT },
+            angleLines: { color: COLOR_BORDER }
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return context.label + ': ' + context.raw.toFixed(1);
+              }
+            }
+          }
+        }
+      }
+    });
+  });
+}
+// Row 3: Column Table + Donut
+function renderRow3(cols, breakdown) {
+  document.getElementById('row3').innerHTML = 
+    '<div class="card">' +
+      '<div class="card-header">' +
+        '<div>' +
+          '<div class="card-title">Column Quality Metrics</div>' +
+          '<div class="card-sub">Sorted by debt score (highest first)</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="table-wrap">' +
+        '<table style="width:100%;border-collapse:collapse">' +
+          '<thead>' +
+            '<tr style="border-bottom:1px solid var(--border)">' +
+              '<th style="text-align:left;padding:10px">Column</th>' +
+              '<th style="text-align:left;padding:10px">Type</th>' +
+              '<th style="text-align:left;padding:10px">Missing</th>' +
+              '<th style="text-align:left;padding:10px">Empty</th>' +
+              '<th style="text-align:left;padding:10px">Invalid</th>' +
+              '<th style="text-align:left;padding:10px">Debt Score</th>' +
+            '</tr>' +
+          '</thead>' +
+          '<tbody id="colTbody"></tbody>' +
+        '</table>' +
+      '</div>' +
+    '</div>' +
+    '<div class="card" style="display:flex;flex-direction:column">' +
+      '<div class="card-title mb-4">Debt Distribution</div>' +
+      '<div class="chart-wrap" style="position:relative;height:240px">' +
+        '<canvas id="donutChart"></canvas>' +
+      '</div>' +
+      '<div id="donutLegend" style="display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin-top:16px"></div>' +
+    '</div>';
+
+  // Column table
+  var tbody = document.getElementById('colTbody');
+  tbody.innerHTML = '';
+  var limit = Math.min(25, cols.length);
+  for (var i = 0; i < limit; i++) {
+    var m = cols[i];
+    var s = parseFloat(m.column_debt_score);
+    var colName = m.column_name;
+    if (colName.length > 20) colName = colName.slice(0, 20) + '…';
+    var missingColor = m.missing_pct > 10 ? COLOR_HIGH : (m.missing_pct > 0 ? COLOR_MED : COLOR_LOW);
+    tbody.insertAdjacentHTML('beforeend',
+      '<tr style="border-bottom:1px solid rgba(99,120,180,0.08)">' +
+        '<td style="padding:10px;color:var(--text-primary)" title="' + m.column_name + '">' + colName + '</td>' +
+        '<td style="padding:10px"><code style="font-size:.7rem;background:var(--bg-elevated);padding:1px 5px;border-radius:4px">' + m.data_type + '</code></td>' +
+        '<td style="padding:10px"><span style="color:' + missingColor + '">' + m.missing_pct.toFixed(1) + '%</span></td>' +
+        '<td style="padding:10px">' + m.empty_string_count + '</td>' +
+        '<td style="padding:10px">' + m.invalid_format_count + '</td>' +
+        '<td style="padding:10px">' +
+          '<div class="score-bar-inline" style="display:flex;align-items:center;gap:8px">' +
+            '<div class="score-bar-track" style="flex:1;height:4px;background:var(--bg-elevated);border-radius:999px;overflow:hidden">' +
+              '<div class="score-bar-fill" style="width:' + s + '%;height:100%;background:' + scoreColor(s) + ';border-radius:999px"></div>' +
+            '</div>' +
+            '<span class="score-bar-val" style="font-weight:700;font-size:.8rem;color:' + scoreColor(s) + '">' + s.toFixed(0) + '</span>' +
+          '</div>' +
+        '</td>' +
+      '</tr>');
+  }
+
+  // Donut chart - distinct color per category slot, not score-based
+  var donutLabels = [];
+  var donutVals = [];
+  var CATEGORY_COLORS = ['#4f8ef7', '#a78bfa', '#34d399', '#fb923c', '#f472b6'];
+  var donutColors = [];
+  for (var i = 0; i < breakdown.length; i++) {
+    donutLabels.push(breakdown[i].category);
+    donutVals.push(parseFloat(breakdown[i].score));
+    donutColors.push(CATEGORY_COLORS[i % CATEGORY_COLORS.length]);
+  }
+  
+  var ctx2 = document.getElementById('donutChart').getContext('2d');
+  if (chartInstances.donut) {
+    chartInstances.donut.destroy();
+    chartInstances.donut = null;
+  }
+  chartInstances.donut = new Chart(ctx2, {
+    type: 'doughnut',
+    data: {
+      labels: donutLabels,
+      datasets: [{
+        data: donutVals,
+        backgroundColor: donutColors.map(function(c) { return c + '40'; }),
+        borderColor: donutColors,
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '65%',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return context.label + ': ' + context.raw.toFixed(1);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // Legend
+  var leg = document.getElementById('donutLegend');
+  leg.innerHTML = '';
+  for (var i = 0; i < breakdown.length; i++) {
+    var b = breakdown[i];
+    var s = parseFloat(b.score);
+    leg.insertAdjacentHTML('beforeend',
+      '<div style="display:flex;align-items:center;gap:8px">' +
+        '<span style="width:10px;height:10px;border-radius:50%;background:' + donutColors[i] + '"></span>' +
+        '<span style="color:var(--text-secondary)">' + b.category + '</span>' +
+        '<span style="font-weight:700;color:' + donutColors[i] + '">' + s.toFixed(1) + '</span>' +
+      '</div>');
+  }
+}
+
+// Recommendations
+function renderRecs(recs) {
+  var sec = document.getElementById('recsSection');
+  sec.style.display = '';
+  document.getElementById('recCount').textContent = recs.length + ' items';
+
+  var grid = document.getElementById('recsGrid');
+  grid.innerHTML = '';
+  var pColors = { Critical: '#ef4444', High: '#f97316', Medium: '#f59e0b', Low: '#22c55e' };
+  for (var i = 0; i < recs.length; i++) {
+    var r = recs[i];
+    var col = pColors[r.priority] || COLOR_ACCENT;
+    grid.insertAdjacentHTML('beforeend',
+      '<div class="rec-card" style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:10px;padding:16px 18px;display:flex;gap:14px">' +
+        '<div class="rec-dot" style="width:8px;height:8px;border-radius:50%;background:' + col + ';flex-shrink:0;margin-top:6px"></div>' +
+        '<div class="rec-content" style="flex:1">' +
+          '<div class="rec-title" style="font-weight:600;font-size:.88rem;color:var(--text-primary);margin-bottom:4px">' + r.title + '</div>' +
+          '<div class="rec-desc" style="font-size:.8rem;color:var(--text-secondary);line-height:1.5">' + r.description + '</div>' +
+          '<div class="rec-meta" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">' +
+            '<span class="rec-tag" style="font-size:.7rem;color:var(--text-muted);background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:2px 8px">Priority: ' + r.priority + '</span>' +
+            '<span class="rec-tag" style="font-size:.7rem;color:var(--text-muted);background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:2px 8px">Category: ' + r.category + '</span>' +
+            '<span class="rec-tag" style="font-size:.7rem;color:var(--text-muted);background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:2px 8px">Effort: ' + r.effort + '</span>' +
+            '<span class="rec-tag" style="font-size:.7rem;color:var(--text-muted);background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:2px 8px">Impact: ' + r.impact + '</span>' +
+            (r.column_ref ? '<span class="rec-tag" style="font-size:.7rem;color:var(--text-muted);background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:2px 8px">Col: ' + r.column_ref + '</span>' : '') +
+          '</div>' +
+        '</div>' +
+      '</div>');
+  }
+}
+
+// Data Preview
+function renderPreview(headers, rows) {
+  if (!headers || headers.length === 0) return;
+  document.getElementById('previewSection').style.display = '';
+  var container = document.getElementById('previewTable');
+  var thRow = '';
+  for (var i = 0; i < headers.length; i++) {
+    thRow += '<th style="padding:10px;text-align:left;font-size:.72rem;font-weight:700;color:var(--text-muted)">' + headers[i] + '</th>';
+  }
+  var tbRows = '';
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var rowHtml = '<tr>';
+    for (var j = 0; j < headers.length; j++) {
+      var val = r[headers[j]] || '';
+      rowHtml += '<td style="padding:10px;color:var(--text-secondary);font-size:.8rem" title="' + val + '">' + String(val).slice(0, 40) + '</td>';
+    }
+    rowHtml += '</tr>';
+    tbRows += rowHtml;
+  }
+  container.innerHTML = '<table style="width:100%;border-collapse:collapse"><thead>' + thRow + '</thead><tbody>' + tbRows + '</tbody></table>';
+}
+
+// Download
+function downloadReport() {
+  window.open('/api/assessment/' + AID + '/download', '_blank');
+}
+
+loadDashboard();
+</script>
+{% endblock %}

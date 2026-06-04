@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+{% block title %}History & Trends — CDO DebtLens{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header flex-between" style="flex-wrap:wrap;gap:12px">
+  <div>
+    <h1>History & Trends</h1>
+    <p>All previous assessments, debt trends, and distribution analytics</p>
+  </div>
+  <a href="/" class="btn btn-primary btn-sm">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    New Assessment
+  </a>
+</div>
+
+<!-- ─── SUMMARY STATS ─────────────────────────────────────── -->
+<div class="grid-4 mb-6" id="summaryStats">
+  <div class="skeleton" style="height:100px;border-radius:16px"></div>
+  <div class="skeleton" style="height:100px;border-radius:16px"></div>
+  <div class="skeleton" style="height:100px;border-radius:16px"></div>
+  <div class="skeleton" style="height:100px;border-radius:16px"></div>
+</div>
+
+<!-- ─── CHARTS ROW ─────────────────────────────────────────── -->
+<div class="grid-2 mb-6">
+  <div class="card">
+    <div class="card-title mb-4">Debt Score Trend</div>
+    <div class="card-sub mb-4">Historical scores across assessments (latest 30)</div>
+    <div class="chart-wrap"><canvas id="trendChart" style="max-height:220px"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title mb-4">Category Distribution</div>
+    <div class="card-sub mb-4">Assessment breakdown by debt level</div>
+    <div style="display:flex;align-items:center;gap:20px">
+      <div class="chart-wrap" style="flex:1;position:relative;height:220px"><canvas id="distChart"></canvas></div>
+      <div id="distLegend" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── FILTER + SEARCH ────────────────────────────────────── -->
+<div class="card card-sm mb-4" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+  <input type="text" id="searchInput" placeholder="Search assessments…"
+         style="flex:1;min-width:200px;padding:9px 14px;background:var(--bg-input);
+                border:1px solid var(--border);border-radius:var(--radius);
+                color:var(--text-primary);font-size:.86rem"
+         oninput="filterCards()">
+  <select id="catFilter" onchange="filterCards()"
+          style="padding:9px 14px;background:var(--bg-input);border:1px solid var(--border);
+                 border-radius:var(--radius);color:var(--text-primary);font-size:.86rem">
+    <option value="">All Categories</option>
+    <option value="Low">Low Debt</option>
+    <option value="Medium">Medium Debt</option>
+    <option value="High">High Debt</option>
+  </select>
+  <span id="filteredCount" class="badge badge-info" style="white-space:nowrap"></span>
+</div>
+
+<!-- ─── CARDS GRID ────────────────────────────────────────── -->
+<div class="grid-3" id="histCards">
+  <div class="skeleton" style="height:160px;border-radius:16px"></div>
+  <div class="skeleton" style="height:160px;border-radius:16px"></div>
+  <div class="skeleton" style="height:160px;border-radius:16px"></div>
+  <div class="skeleton" style="height:160px;border-radius:16px"></div>
+  <div class="skeleton" style="height:160px;border-radius:16px"></div>
+  <div class="skeleton" style="height:160px;border-radius:16px"></div>
+</div>
+
+<!-- ─── PAGINATION ─────────────────────────────────────────── -->
+<div class="pagination" id="pagination"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allCards = [];
+let currentPage = 1;
+
+const C_LOW  = '#22c55e', C_MED = '#f59e0b', C_HIGH = '#ef4444', C_ACC = '#4f8ef7';
+
+function scoreColor(s) { return s <= 30 ? C_LOW : s <= 65 ? C_MED : C_HIGH }
+
+// ─── Load data ────────────────────────────────────────────
+async function loadHistory(page=1) {
+  const data = await fetch(`/api/history?page=${page}`).then(r => r.json());
+  allCards = data.assessments;
+  currentPage = data.page;
+
+  renderSummary(data);
+  renderTrend(data.trend);
+  renderDist(data.distribution);
+  renderCards(allCards);
+  renderPagination(data.total, data.page, data.per_page);
+}
+
+// ─── Summary Stats ────────────────────────────────────────
+function renderSummary(data) {
+  const total = data.total;
+  const scores = data.trend.map(t => parseFloat(t.debt_score));
+  const avg    = scores.length ? (scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1) : '—';
+  const best   = scores.length ? Math.min(...scores).toFixed(1) : '—';
+  const worst  = scores.length ? Math.max(...scores).toFixed(1) : '—';
+
+  document.getElementById('summaryStats').innerHTML = `
+    <div class="kpi">
+      <div class="kpi-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M9 17H7a5 5 0 0 1 0-10h10a3 3 0 0 1 0 6H9a1 1 0 0 1 0-2h8" stroke="currentColor" stroke-width="1.8"/></svg></div>
+      <div class="kpi-value">${total.toLocaleString()}</div>
+      <div class="kpi-label">Total Assessments</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon" style="background:rgba(245,158,11,.12);color:var(--medium)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M3 3v18h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M7 16l4-4 3 3 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="kpi-value">${avg}</div>
+      <div class="kpi-label">Average Debt Score</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon" style="background:var(--low-bg);color:var(--low)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" stroke="currentColor" stroke-width="1.8"/><path d="M12 12h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+      <div class="kpi-value" style="color:var(--low)">${best}</div>
+      <div class="kpi-label">Best Score (Lowest Debt)</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon" style="background:var(--high-bg);color:var(--high)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" stroke="currentColor" stroke-width="1.8"/><path d="M12 9v4M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+      <div class="kpi-value" style="color:var(--high)">${worst}</div>
+      <div class="kpi-label">Worst Score (Highest Debt)</div>
+    </div>`;
+}
+
+// ─── Trend Chart ──────────────────────────────────────────
+function renderTrend(trend) {
+  if (!trend || !trend.length) return;
+  const labels = trend.map((t,i) => `#${i+1}`);
+  const vals   = trend.map(t => parseFloat(t.debt_score));
+  const colors = vals.map(v => scoreColor(v));
+
+  const minVal = Math.max(0, Math.floor(Math.min(...vals) * 0.7));
+  const maxVal = Math.min(100, Math.ceil(Math.max(...vals) * 1.3));
+
+  const ctx = document.getElementById('trendChart').getContext('2d');
+  new Chart(ctx, {
+    type:'line',
+    data:{
+      labels,
+      datasets:[{
+        label:'Debt Score',
+        data:vals,
+        borderColor: C_ACC,
+        backgroundColor: 'rgba(79,142,247,0.08)',
+        pointBackgroundColor: colors,
+        pointBorderColor:'#fff',
+        pointRadius:5,
+        fill:true,
+        tension:0.4,
+      }]
+    },
+    options:{
+      responsive:true,
+      scales:{
+        y:{
+          min: minVal,
+          suggestedMax: maxVal,
+          grid:{color:'rgba(99,120,180,0.12)'},
+          ticks:{color:'var(--text-muted)'}
+        },
+        x:{ grid:{display:false}, ticks:{color:'var(--text-muted)',maxRotation:0} }
+      },
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{label:ctx=>`Score: ${ctx.parsed.y.toFixed(1)}`}}
+      }
+    }
+  });
+}
+
+// ─── Distribution Chart ───────────────────────────────────
+function renderDist(dist) {
+  if (!dist || !dist.length) return;
+  const labels = dist.map(d => d.debt_category);
+  const vals   = dist.map(d => d.cnt);
+  const colors = labels.map(l => l==='Low'?C_LOW:l==='Medium'?C_MED:C_HIGH);
+
+  const ctx = document.getElementById('distChart').getContext('2d');
+  new Chart(ctx, {
+    type:'doughnut',
+    data:{
+      labels,
+      datasets:[{data:vals, backgroundColor:colors.map(c=>c+'30'), borderColor:colors, borderWidth:2}]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      cutout:'65%',
+      plugins:{ legend:{display:false} }
+    }
+  });
+
+  const leg = document.getElementById('distLegend');
+  const total = vals.reduce((a,b)=>a+b,0);
+  dist.forEach((d,i)=>{
+    leg.insertAdjacentHTML('beforeend',`
+      <div style="display:flex;align-items:center;gap:8px;font-size:.82rem">
+        <span style="width:10px;height:10px;border-radius:50%;background:${colors[i]};flex-shrink:0"></span>
+        <span style="color:var(--text-secondary)">${d.debt_category}</span>
+        <span style="font-weight:700;color:var(--text-primary);margin-left:auto">${d.cnt}</span>
+        <span style="color:var(--text-muted)">${total?(d.cnt/total*100).toFixed(0):0}%</span>
+      </div>`);
+  });
+}
+
+// ─── Cards ────────────────────────────────────────────────
+function renderCards(items) {
+  const grid = document.getElementById('histCards');
+  if (!items.length) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+      <div class="empty-icon">📊</div>
+      <h3>No assessments yet</h3>
+      <p>Upload a dataset to get started</p>
+      <a href="/" class="btn btn-primary mt-4">Upload Dataset</a>
+    </div>`;
+    document.getElementById('filteredCount').textContent = '0 results';
+    return;
+  }
+
+  document.getElementById('filteredCount').textContent = `${items.length} result${items.length!==1?'s':''}`;
+  grid.innerHTML = items.map(a => {
+    const sc = parseFloat(a.debt_score);
+    const cat = a.debt_category.toLowerCase();
+    const d = new Date(a.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
+    return `
+    <div class="hist-card" onclick="window.location='/dashboard/${a.id}'">
+      <div class="hist-card-top">
+        <div class="hist-card-name" title="${a.assessment_name}">${a.assessment_name}</div>
+        <span class="badge badge-${cat}">${sc.toFixed(0)}</span>
+      </div>
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <div class="progress-wrap" style="flex:1"><div class="score-bar-fill"
+            style="height:4px;border-radius:999px;width:${sc}%;background:${scoreColor(sc)}"></div></div>
+          <span style="font-size:.7rem;color:var(--text-muted)">${sc.toFixed(1)}/100</span>
+        </div>
+      </div>
+      <div class="hist-card-meta">
+        <div class="hist-meta-item"><span class="hist-meta-label">Rows</span><span class="hist-meta-val">${(a.total_rows||0).toLocaleString()}</span></div>
+        <div class="hist-meta-item"><span class="hist-meta-label">Columns</span><span class="hist-meta-val">${a.total_columns||0}</span></div>
+        <div class="hist-meta-item" style="grid-column:1/-1"><span class="hist-meta-label">Date</span><span class="hist-meta-val" style="font-size:.75rem">${d}</span></div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:4px">
+        <a href="/dashboard/${a.id}" class="btn btn-ghost btn-sm" style="flex:1;justify-content:center"
+           onclick="event.stopPropagation()">View Dashboard</a>
+        <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteAssessment(${a.id},this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─── Filter ───────────────────────────────────────────────
+function filterCards() {
+  const q   = document.getElementById('searchInput').value.toLowerCase();
+  const cat = document.getElementById('catFilter').value;
+  const filtered = allCards.filter(a =>
+    (!q || a.assessment_name.toLowerCase().includes(q) || a.original_filename.toLowerCase().includes(q)) &&
+    (!cat || a.debt_category === cat)
+  );
+  renderCards(filtered);
+}
+
+// ─── Pagination ───────────────────────────────────────────
+function renderPagination(total, page, perPage) {
+  const pages = Math.ceil(total / perPage);
+  if (pages <= 1) { document.getElementById('pagination').innerHTML=''; return; }
+  const el = document.getElementById('pagination');
+  let html = `<button class="page-btn" onclick="loadHistory(${page-1})" ${page<=1?'disabled':''}>‹</button>`;
+  for (let i = Math.max(1,page-2); i <= Math.min(pages,page+2); i++) {
+    html += `<button class="page-btn ${i===page?'active':''}" onclick="loadHistory(${i})">${i}</button>`;
+  }
+  html += `<button class="page-btn" onclick="loadHistory(${page+1})" ${page>=pages?'disabled':''}>›</button>`;
+  el.innerHTML = html;
+}
+
+// ─── Delete ───────────────────────────────────────────────
+async function deleteAssessment(id, btn) {
+  if (!confirm('Delete this assessment? This cannot be undone.')) return;
+  const numId = parseInt(id, 10);
+  btn.textContent = '…'; btn.disabled = true;
+  try {
+    const res = await fetch(`/api/assessment/${numId}`, {method:'DELETE'});
+    if (!res.ok) throw new Error('Server error');
+    // Reload from page 1 with clean state
+    document.getElementById('searchInput').value = '';
+    document.getElementById('catFilter').value = '';
+    await loadHistory(1);
+  } catch(e) {
+    alert('Delete failed. Please try again.');
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+}
+
+loadHistory(1);
+</script>
+{% endblock %}

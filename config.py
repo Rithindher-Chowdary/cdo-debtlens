@@ -14,10 +14,9 @@ class Config:
     MYSQL_DB       = os.environ.get('MYSQL_DB', 'cdo_debt_db')
     MYSQL_PORT     = int(os.environ.get('MYSQL_PORT', 3306))
 
-    # Mail (Gmail)
-    MAIL_EMAIL    = os.environ.get('MAIL_EMAIL', '')
-    MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD', '')
-    ADMIN_EMAIL   = os.environ.get('ADMIN_EMAIL', '')
+    # Resend
+    RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
+    ADMIN_EMAIL    = os.environ.get('ADMIN_EMAIL', '')
 
     # OTP expiry in minutes
     OTP_EXPIRY_MINUTES = 10

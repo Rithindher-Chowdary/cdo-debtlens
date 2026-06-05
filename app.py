@@ -8,11 +8,9 @@ import json
 import uuid
 import random
 import string
-import smtplib
+import resend
 import traceback
 from datetime import datetime, timedelta
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from functools import wraps
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -56,59 +54,34 @@ def admin_required(f):
 
 # ─── Mail Helper ────────────────────────────────────────────
 
+def _resend_client():
+    resend.api_key = os.environ.get('RESEND_API_KEY', '')
+    return resend
+
 def send_otp_email(to_email, otp, purpose='signup'):
     try:
         subject = 'CDO DebtLens — Your OTP Code'
-        if purpose == 'signup':
-            body = f"""
-            <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
-                        background:#0f172a;color:#f0f4ff;border-radius:12px">
-              <h2 style="color:#4f8ef7;margin-bottom:8px">CDO DebtLens</h2>
-              <p style="color:#94a3b8">Verify your email to complete signup</p>
-              <div style="background:#1a2237;border-radius:10px;padding:24px;
-                          text-align:center;margin:24px 0">
-                <p style="color:#94a3b8;margin-bottom:8px;font-size:13px">Your OTP Code</p>
-                <div style="font-size:36px;font-weight:800;letter-spacing:12px;
-                            color:#4f8ef7">{otp}</div>
-                <p style="color:#64748b;font-size:12px;margin-top:12px">
-                  Expires in 10 minutes
-                </p>
-              </div>
-              <p style="color:#64748b;font-size:12px">
-                If you didn't request this, ignore this email.
-              </p>
-            </div>
-            """
-        else:
-            body = f"""
-            <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
-                        background:#0f172a;color:#f0f4ff;border-radius:12px">
-              <h2 style="color:#4f8ef7;margin-bottom:8px">CDO DebtLens</h2>
-              <p style="color:#94a3b8">Your login OTP code</p>
-              <div style="background:#1a2237;border-radius:10px;padding:24px;
-                          text-align:center;margin:24px 0">
-                <p style="color:#94a3b8;margin-bottom:8px;font-size:13px">Your OTP Code</p>
-                <div style="font-size:36px;font-weight:800;letter-spacing:12px;
-                            color:#4f8ef7">{otp}</div>
-                <p style="color:#64748b;font-size:12px;margin-top:12px">
-                  Expires in 10 minutes
-                </p>
-              </div>
-              <p style="color:#64748b;font-size:12px">
-                If you didn't request this, please secure your account immediately.
-              </p>
-            </div>
-            """
-
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From']    = app.config['MAIL_EMAIL']
-        msg['To']      = to_email
-        msg.attach(MIMEText(body, 'html'))
-
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-            server.login(app.config['MAIL_EMAIL'], app.config['MAIL_PASSWORD'])
-            server.sendmail(app.config['MAIL_EMAIL'], to_email, msg.as_string())
+        body = f"""
+        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
+                    background:#0f172a;color:#f0f4ff;border-radius:12px">
+          <h2 style="color:#4f8ef7;margin-bottom:8px">CDO DebtLens</h2>
+          <p style="color:#94a3b8">{"Verify your email to complete signup" if purpose == "signup" else "Your login verification code"}</p>
+          <div style="background:#1a2237;border-radius:10px;padding:24px;
+                      text-align:center;margin:24px 0">
+            <p style="color:#94a3b8;margin-bottom:8px;font-size:13px">Your OTP Code</p>
+            <div style="font-size:36px;font-weight:800;letter-spacing:12px;color:#4f8ef7">{otp}</div>
+            <p style="color:#64748b;font-size:12px;margin-top:12px">Expires in 10 minutes</p>
+          </div>
+          <p style="color:#64748b;font-size:12px">If you didn't request this, ignore this email.</p>
+        </div>
+        """
+        r = _resend_client()
+        r.Emails.send({
+            "from":    "CDO DebtLens <onboarding@resend.dev>",
+            "to":      [to_email],
+            "subject": subject,
+            "html":    body,
+        })
         return True
     except Exception as e:
         print(f"Mail error: {e}")
@@ -116,67 +89,50 @@ def send_otp_email(to_email, otp, purpose='signup'):
 
 
 def send_admin_notification(user_name, user_email):
-    """Notify admin when a new user signs up."""
     try:
-        subject = f'CDO DebtLens — New User Pending Approval: {user_name}'
-        body = f"""
-        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
-                    background:#0f172a;color:#f0f4ff;border-radius:12px">
-          <h2 style="color:#4f8ef7">New User Pending Approval</h2>
-          <p style="color:#94a3b8">A new user has signed up and is waiting for your approval.</p>
-          <div style="background:#1a2237;border-radius:10px;padding:20px;margin:20px 0">
-            <p><strong>Name:</strong> {user_name}</p>
-            <p><strong>Email:</strong> {user_email}</p>
-            <p><strong>Time:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
-          </div>
-          <p style="color:#94a3b8">Please login to the admin panel to approve or reject.</p>
-        </div>
-        """
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From']    = app.config['MAIL_EMAIL']
-        msg['To']      = app.config['ADMIN_EMAIL']
-        msg.attach(MIMEText(body, 'html'))
-
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-            server.login(app.config['MAIL_EMAIL'], app.config['MAIL_PASSWORD'])
-            server.sendmail(app.config['MAIL_EMAIL'], app.config['ADMIN_EMAIL'], msg.as_string())
+        r = _resend_client()
+        r.Emails.send({
+            "from":    "CDO DebtLens <onboarding@resend.dev>",
+            "to":      [app.config['ADMIN_EMAIL']],
+            "subject": f"CDO DebtLens — New User Pending Approval: {user_name}",
+            "html":    f"""
+            <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
+                        background:#0f172a;color:#f0f4ff;border-radius:12px">
+              <h2 style="color:#4f8ef7">New User Pending Approval</h2>
+              <p style="color:#94a3b8">A new user has signed up and is waiting for your approval.</p>
+              <div style="background:#1a2237;border-radius:10px;padding:20px;margin:20px 0">
+                <p><strong>Name:</strong> {user_name}</p>
+                <p><strong>Email:</strong> {user_email}</p>
+                <p><strong>Time:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
+              </div>
+              <p style="color:#94a3b8">Please login to the admin panel to approve or reject.</p>
+            </div>
+            """,
+        })
     except Exception as e:
         print(f"Admin notify error: {e}")
 
 
 def send_approval_email(to_email, user_name, approved=True):
-    """Notify user of approval/rejection."""
     try:
-        if approved:
-            subject = 'CDO DebtLens — Your account has been approved!'
-            body = f"""
+        r = _resend_client()
+        r.Emails.send({
+            "from":    "CDO DebtLens <onboarding@resend.dev>",
+            "to":      [to_email],
+            "subject": "CDO DebtLens — Account Approved!" if approved else "CDO DebtLens — Account Request Update",
+            "html":    f"""
             <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
                         background:#0f172a;color:#f0f4ff;border-radius:12px">
-              <h2 style="color:#22c55e">Account Approved!</h2>
-              <p style="color:#94a3b8">Hi {user_name}, your CDO DebtLens account has been approved.</p>
-              <p style="color:#94a3b8">You can now login and start assessing your datasets.</p>
+              <h2 style="color:{'#22c55e' if approved else '#ef4444'}">
+                {"Account Approved!" if approved else "Account Not Approved"}
+              </h2>
+              <p style="color:#94a3b8">
+                Hi {user_name}, {"your CDO DebtLens account has been approved. You can now login." 
+                if approved else "unfortunately your account request was not approved. Please contact the administrator."}
+              </p>
             </div>
-            """
-        else:
-            subject = 'CDO DebtLens — Account Request Update'
-            body = f"""
-            <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
-                        background:#0f172a;color:#f0f4ff;border-radius:12px">
-              <h2 style="color:#ef4444">Account Not Approved</h2>
-              <p style="color:#94a3b8">Hi {user_name}, unfortunately your account request was not approved.</p>
-              <p style="color:#94a3b8">Please contact the administrator for more information.</p>
-            </div>
-            """
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From']    = app.config['MAIL_EMAIL']
-        msg['To']      = to_email
-        msg.attach(MIMEText(body, 'html'))
-
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-            server.login(app.config['MAIL_EMAIL'], app.config['MAIL_PASSWORD'])
-            server.sendmail(app.config['MAIL_EMAIL'], to_email, msg.as_string())
+            """,
+        })
     except Exception as e:
         print(f"Approval email error: {e}")
 

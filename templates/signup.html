@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign Up — CDO DebtLens</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/main.css">
+  <style>
+    body { display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px; }
+    .auth-wrap { width:100%; max-width:420px; }
+    .auth-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:40px 36px; box-shadow:var(--shadow-lg); }
+    .auth-logo { display:flex; align-items:center; gap:10px; margin-bottom:32px; }
+    .auth-logo-icon { width:40px; height:40px; background:var(--accent); border-radius:10px; display:flex; align-items:center; justify-content:center; color:#fff; }
+    .auth-logo-text { font-family:var(--font-head); font-size:1.3rem; font-weight:800; letter-spacing:-0.03em; }
+    .auth-logo-sup { font-size:0.5rem; color:var(--accent); vertical-align:super; }
+    .auth-title { font-family:var(--font-head); font-size:1.5rem; font-weight:800; letter-spacing:-0.04em; margin-bottom:6px; }
+    .auth-sub { font-size:0.85rem; color:var(--text-secondary); margin-bottom:28px; }
+    .form-group { margin-bottom:16px; }
+    .form-label { display:block; font-size:0.8rem; font-weight:600; color:var(--text-secondary); margin-bottom:6px; }
+    .form-input { width:100%; padding:11px 14px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius); color:var(--text-primary); font-size:0.88rem; font-family:var(--font-body); transition:border-color .15s; }
+    .form-input:focus { outline:none; border-color:var(--accent); }
+    .form-input::placeholder { color:var(--text-muted); }
+    .otp-inputs { display:flex; gap:10px; justify-content:center; margin:16px 0; }
+    .otp-digit { width:48px; height:56px; text-align:center; font-size:1.4rem; font-weight:700; font-family:var(--font-head); background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius); color:var(--text-primary); transition:border-color .15s; }
+    .otp-digit:focus { outline:none; border-color:var(--accent); }
+    .auth-err { background:var(--high-bg); border:1px solid rgba(239,68,68,.3); border-radius:var(--radius); padding:10px 14px; font-size:0.82rem; color:var(--high); margin-bottom:14px; display:none; }
+    .auth-ok  { background:var(--low-bg);  border:1px solid rgba(34,197,94,.3);  border-radius:var(--radius); padding:10px 14px; font-size:0.82rem; color:var(--low);  margin-bottom:14px; display:none; }
+    .auth-link { font-size:0.83rem; color:var(--text-secondary); text-align:center; margin-top:20px; }
+    .auth-link a { color:var(--accent); font-weight:600; }
+    .step { display:none; }
+    .step.active { display:block; }
+    .pending-box { background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius-lg); padding:28px; text-align:center; }
+    .pending-icon { font-size:2.5rem; margin-bottom:12px; }
+    .resend-wrap { text-align:center; margin-top:12px; font-size:0.8rem; color:var(--text-muted); }
+    .resend-btn { color:var(--accent); cursor:pointer; font-weight:600; background:none; border:none; font-size:0.8rem; }
+    .password-hint { font-size:0.72rem; color:var(--text-muted); margin-top:4px; }
+  </style>
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+          <path d="M14 17.5a3.5 3.5 0 1 0 7 0 3.5 3.5 0 0 0-7 0z" stroke="currentColor" stroke-width="2"/>
+        </svg>
+      </div>
+      <span class="auth-logo-text">DebtLens<sup class="auth-logo-sup">CDO</sup></span>
+    </div>
+
+    <!-- Step 1: Registration form -->
+    <div class="step active" id="step1">
+      <div class="auth-title">Create account</div>
+      <div class="auth-sub">Request access to CDO DebtLens</div>
+      <div class="auth-err" id="signupErr"></div>
+      <div class="auth-ok"  id="signupOk"></div>
+      <div class="form-group">
+        <label class="form-label">Full Name</label>
+        <input type="text" class="form-input" id="fullName" placeholder="John Doe" autocomplete="name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email address</label>
+        <input type="email" class="form-input" id="signupEmail" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input type="password" class="form-input" id="signupPassword" placeholder="Minimum 8 characters"
+               onkeydown="if(event.key==='Enter') submitSignup()">
+        <div class="password-hint">At least 8 characters</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirm Password</label>
+        <input type="password" class="form-input" id="confirmPassword" placeholder="Re-enter password"
+               onkeydown="if(event.key==='Enter') submitSignup()">
+      </div>
+      <button class="btn btn-primary w-full mt-4" id="signupBtn" onclick="submitSignup()" style="justify-content:center">
+        Send Verification Code
+      </button>
+      <div class="auth-link">Already have an account? <a href="/login">Sign in</a></div>
+    </div>
+
+    <!-- Step 2: OTP verification -->
+    <div class="step" id="step2">
+      <div class="auth-title">Verify your email</div>
+      <div class="auth-sub" id="otpSubText">Enter the 6-digit code sent to your email</div>
+      <div class="auth-err" id="otpErr"></div>
+      <div class="auth-ok"  id="otpOk"></div>
+      <div class="otp-inputs">
+        <input type="text" class="otp-digit" maxlength="1" id="d0" oninput="otpInput(0)" onkeydown="otpKey(event,0)">
+        <input type="text" class="otp-digit" maxlength="1" id="d1" oninput="otpInput(1)" onkeydown="otpKey(event,1)">
+        <input type="text" class="otp-digit" maxlength="1" id="d2" oninput="otpInput(2)" onkeydown="otpKey(event,2)">
+        <input type="text" class="otp-digit" maxlength="1" id="d3" oninput="otpInput(3)" onkeydown="otpKey(event,3)">
+        <input type="text" class="otp-digit" maxlength="1" id="d4" oninput="otpInput(4)" onkeydown="otpKey(event,4)">
+        <input type="text" class="otp-digit" maxlength="1" id="d5" oninput="otpInput(5)" onkeydown="otpKey(event,5)">
+      </div>
+      <button class="btn btn-primary w-full" id="otpBtn" onclick="submitOtp()" style="justify-content:center">
+        Verify Email
+      </button>
+      <div class="resend-wrap">
+        Didn't receive it?
+        <button class="resend-btn" id="resendBtn" onclick="resendOtp()">Resend OTP</button>
+      </div>
+      <div class="auth-link" style="margin-top:12px">
+        <a href="#" onclick="goBack()">← Back</a>
+      </div>
+    </div>
+
+    <!-- Step 3: Pending approval -->
+    <div class="step" id="step3">
+      <div class="pending-box">
+        <div class="pending-icon">⏳</div>
+        <div style="font-family:var(--font-head);font-size:1.1rem;font-weight:700;margin-bottom:8px">
+          Awaiting Admin Approval
+        </div>
+        <div style="font-size:0.85rem;color:var(--text-secondary);line-height:1.6">
+          Your email has been verified. Your account is now pending approval from the administrator.
+          You'll receive an email once your account is approved.
+        </div>
+        <a href="/login" class="btn btn-ghost w-full mt-4" style="justify-content:center">
+          Back to Login
+        </a>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let currentEmail = '';
+
+function showErr(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg; el.style.display = 'block';
+  const ok = document.getElementById(id.replace('Err','Ok'));
+  if (ok) ok.style.display = 'none';
+}
+function showOk(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg; el.style.display = 'block';
+  const err = document.getElementById(id.replace('Ok','Err'));
+  if (err) err.style.display = 'none';
+}
+
+async function submitSignup() {
+  const full_name = document.getElementById('fullName').value.trim();
+  const email     = document.getElementById('signupEmail').value.trim();
+  const password  = document.getElementById('signupPassword').value;
+  const confirm   = document.getElementById('confirmPassword').value;
+  const btn       = document.getElementById('signupBtn');
+
+  if (!full_name || !email || !password || !confirm) {
+    showErr('signupErr', 'Please fill in all fields'); return;
+  }
+  if (password.length < 8) {
+    showErr('signupErr', 'Password must be at least 8 characters'); return;
+  }
+  if (password !== confirm) {
+    showErr('signupErr', 'Passwords do not match'); return;
+  }
+
+  btn.textContent = 'Sending…'; btn.disabled = true;
+
+  try {
+    const res  = await fetch('/api/auth/signup', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({full_name, email, password})
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      showErr('signupErr', data.error);
+      btn.textContent = 'Send Verification Code'; btn.disabled = false;
+      return;
+    }
+
+    currentEmail = email;
+    document.getElementById('otpSubText').textContent = `Enter the 6-digit code sent to ${email}`;
+    document.getElementById('step1').classList.remove('active');
+    document.getElementById('step2').classList.add('active');
+    document.getElementById('d0').focus();
+  } catch(e) {
+    showErr('signupErr', 'Network error. Please try again.');
+    btn.textContent = 'Send Verification Code'; btn.disabled = false;
+  }
+}
+
+function otpInput(i) {
+  const val = document.getElementById(`d${i}`).value;
+  if (val && i < 5) document.getElementById(`d${i+1}`).focus();
+  if (getOtp().length === 6) submitOtp();
+}
+function otpKey(e, i) {
+  if (e.key === 'Backspace' && !document.getElementById(`d${i}`).value && i > 0)
+    document.getElementById(`d${i-1}`).focus();
+}
+function getOtp() {
+  return [0,1,2,3,4,5].map(i => document.getElementById(`d${i}`).value).join('');
+}
+
+async function submitOtp() {
+  const otp = getOtp();
+  if (otp.length < 6) { showErr('otpErr', 'Please enter the complete 6-digit code'); return; }
+
+  const btn = document.getElementById('otpBtn');
+  btn.textContent = 'Verifying…'; btn.disabled = true;
+
+  try {
+    const res  = await fetch('/api/auth/verify-otp', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email: currentEmail, otp, purpose: 'signup'})
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      showErr('otpErr', data.error);
+      btn.textContent = 'Verify Email'; btn.disabled = false;
+      return;
+    }
+
+    document.getElementById('step2').classList.remove('active');
+    document.getElementById('step3').classList.add('active');
+  } catch(e) {
+    showErr('otpErr', 'Network error. Please try again.');
+    btn.textContent = 'Verify Email'; btn.disabled = false;
+  }
+}
+
+async function resendOtp() {
+  const btn = document.getElementById('resendBtn');
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    await fetch('/api/auth/resend-otp', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email: currentEmail, purpose: 'signup'})
+    });
+    showOk('otpOk', 'OTP resent successfully');
+    setTimeout(() => { btn.disabled=false; btn.textContent='Resend OTP'; }, 30000);
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Resend OTP';
+  }
+}
+
+function goBack() {
+  [0,1,2,3,4,5].forEach(i => document.getElementById(`d${i}`).value = '');
+  document.getElementById('step2').classList.remove('active');
+  document.getElementById('step1').classList.add('active');
+}
+</script>
+</body>
+</html>

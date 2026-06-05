@@ -7,9 +7,17 @@ class Config:
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
     ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls'}
 
-    # MySQL — update credentials before running
+    # MySQL
     MYSQL_HOST     = os.environ.get('MYSQL_HOST', 'localhost')
     MYSQL_USER     = os.environ.get('MYSQL_USER', 'root')
     MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD', 'password')
     MYSQL_DB       = os.environ.get('MYSQL_DB', 'cdo_debt_db')
     MYSQL_PORT     = int(os.environ.get('MYSQL_PORT', 3306))
+
+    # Mail (Gmail)
+    MAIL_EMAIL    = os.environ.get('MAIL_EMAIL', '')
+    MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD', '')
+    ADMIN_EMAIL   = os.environ.get('ADMIN_EMAIL', '')
+
+    # OTP expiry in minutes
+    OTP_EXPIRY_MINUTES = 10

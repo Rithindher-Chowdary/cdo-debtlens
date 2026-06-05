@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Panel — CDO DebtLens</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+
+<!-- Sidebar -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M14 17.5a3.5 3.5 0 1 0 7 0 3.5 3.5 0 0 0-7 0z" stroke="currentColor" stroke-width="2"/>
+      </svg>
+    </div>
+    <span class="brand-text">DebtLens<sup class="brand-sup">CDO</sup></span>
+  </div>
+  <div class="nav-section">
+    <span class="nav-label">Workspace</span>
+    <a href="/" class="nav-item">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 9v13h7v-6h6v6h7V9z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+      <span>Upload & Assess</span>
+    </a>
+    <a href="/history" class="nav-item">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v5l3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span>History & Trends</span>
+    </a>
+    <a href="/admin" class="nav-item active">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="1.8"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span>User Management</span>
+    </a>
+  </div>
+  <div class="sidebar-footer">
+    <a href="/logout" class="btn btn-ghost btn-sm w-full" style="justify-content:center;margin-bottom:8px">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Logout
+    </a>
+    <p class="sidebar-version">v1.0 · Admin Panel</p>
+  </div>
+</nav>
+
+<button class="hamburger" id="hamburger"><span></span><span></span><span></span></button>
+
+<main class="main-content">
+  <div class="page-header flex-between" style="flex-wrap:wrap;gap:12px">
+    <div>
+      <h1>User Management</h1>
+      <p>Approve or reject user registration requests</p>
+    </div>
+  </div>
+
+  <!-- KPI Row -->
+  <div class="grid-4 mb-6" id="adminKpis">
+    <div class="skeleton" style="height:100px;border-radius:16px"></div>
+    <div class="skeleton" style="height:100px;border-radius:16px"></div>
+    <div class="skeleton" style="height:100px;border-radius:16px"></div>
+    <div class="skeleton" style="height:100px;border-radius:16px"></div>
+  </div>
+
+  <!-- Tabs -->
+  <div style="display:flex;gap:4px;margin-bottom:20px;background:var(--bg-card);
+              border:1px solid var(--border);border-radius:var(--radius);padding:4px;width:fit-content">
+    <button class="tab-btn active" id="tabPending"  onclick="switchTab('pending')">
+      Pending <span id="pendingBadge" class="badge badge-medium" style="margin-left:4px"></span>
+    </button>
+    <button class="tab-btn" id="tabApproved" onclick="switchTab('approved')">Approved</button>
+    <button class="tab-btn" id="tabRejected" onclick="switchTab('rejected')">Rejected</button>
+  </div>
+
+  <!-- Users Table -->
+  <div class="card">
+    <div id="usersTableWrap">
+      <div class="skeleton" style="height:200px;border-radius:8px"></div>
+    </div>
+  </div>
+</main>
+
+<style>
+.tab-btn {
+  padding:7px 16px; border-radius:6px; font-size:0.83rem; font-weight:600;
+  background:transparent; border:none; color:var(--text-secondary);
+  cursor:pointer; transition:all .15s; display:flex; align-items:center; gap:6px;
+}
+.tab-btn.active { background:var(--accent); color:#fff; }
+.tab-btn:hover:not(.active) { background:var(--bg-elevated); color:var(--text-primary); }
+.action-btn {
+  padding:5px 12px; border-radius:6px; font-size:0.75rem; font-weight:600;
+  border:none; cursor:pointer; transition:all .15s;
+}
+.approve-btn { background:var(--low-bg); color:var(--low); }
+.approve-btn:hover { background:rgba(34,197,94,.25); }
+.reject-btn  { background:var(--high-bg); color:var(--high); }
+.reject-btn:hover  { background:rgba(239,68,68,.25); }
+.delete-btn  { background:var(--bg-elevated); color:var(--text-muted); }
+.delete-btn:hover  { background:rgba(239,68,68,.15); color:var(--high); }
+</style>
+
+<script>
+let currentTab = 'pending';
+
+async function loadStats() {
+  const data = await fetch('/api/admin/stats').then(r => r.json());
+  document.getElementById('adminKpis').innerHTML = `
+    <div class="kpi">
+      <div class="kpi-icon" style="background:rgba(245,158,11,.12);color:var(--medium)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </div>
+      <div class="kpi-value" style="color:var(--medium)">${data.pending}</div>
+      <div class="kpi-label">Pending Approval</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon" style="background:var(--low-bg);color:var(--low)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="kpi-value" style="color:var(--low)">${data.approved}</div>
+      <div class="kpi-label">Approved Users</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon" style="background:var(--high-bg);color:var(--high)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </div>
+      <div class="kpi-value" style="color:var(--high)">${data.rejected}</div>
+      <div class="kpi-label">Rejected</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="1.8"/></svg></div>
+      <div class="kpi-value">${data.total}</div>
+      <div class="kpi-label">Total Users</div>
+    </div>`;
+  document.getElementById('pendingBadge').textContent = data.pending;
+}
+
+async function loadUsers(status) {
+  const wrap = document.getElementById('usersTableWrap');
+  wrap.innerHTML = '<div class="skeleton" style="height:200px;border-radius:8px"></div>';
+
+  const data = await fetch(`/api/admin/users?status=${status}`).then(r => r.json());
+  const users = data.users;
+
+  if (!users.length) {
+    wrap.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">${status==='pending'?'⏳':status==='approved'?'✅':'❌'}</div>
+      <h3>No ${status} users</h3>
+      <p>${status==='pending'?'No new signup requests':'No users in this category'}</p>
+    </div>`;
+    return;
+  }
+
+  const rows = users.map(u => {
+    const d = new Date(u.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
+    const actions = status === 'pending'
+      ? `<button class="action-btn approve-btn" onclick="approveUser(${u.id},this)">✓ Approve</button>
+         <button class="action-btn reject-btn"  onclick="rejectUser(${u.id},this)">✕ Reject</button>`
+      : status === 'approved'
+      ? `<button class="action-btn reject-btn"  onclick="rejectUser(${u.id},this)">Revoke</button>
+         <button class="action-btn delete-btn"  onclick="deleteUser(${u.id},this)">Delete</button>`
+      : `<button class="action-btn approve-btn" onclick="approveUser(${u.id},this)">Re-approve</button>
+         <button class="action-btn delete-btn"  onclick="deleteUser(${u.id},this)">Delete</button>`;
+
+    return `<tr>
+      <td>
+        <div style="font-weight:600;color:var(--text-primary)">${u.full_name}</div>
+        <div style="font-size:.75rem;color:var(--text-muted)">${u.role}</div>
+      </td>
+      <td>${u.email}</td>
+      <td>${d}</td>
+      <td><span class="badge badge-${u.status==='approved'?'low':u.status==='pending'?'medium':'high'}">${u.status}</span></td>
+      <td><div style="display:flex;gap:6px">${actions}</div></td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Name</th><th>Email</th><th>Registered</th><th>Status</th><th>Actions</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+async function approveUser(id, btn) {
+  btn.textContent = '…'; btn.disabled = true;
+  await fetch(`/api/admin/users/${id}/approve`, {method:'POST'});
+  await loadStats();
+  await loadUsers(currentTab);
+}
+
+async function rejectUser(id, btn) {
+  if (!confirm('Reject this user?')) return;
+  btn.textContent = '…'; btn.disabled = true;
+  await fetch(`/api/admin/users/${id}/reject`, {method:'POST'});
+  await loadStats();
+  await loadUsers(currentTab);
+}
+
+async function deleteUser(id, btn) {
+  if (!confirm('Permanently delete this user?')) return;
+  btn.textContent = '…'; btn.disabled = true;
+  await fetch(`/api/admin/users/${id}/delete`, {method:'DELETE'});
+  await loadStats();
+  await loadUsers(currentTab);
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  ['pending','approved','rejected'].forEach(t => {
+    document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).classList.toggle('active', t===tab);
+  });
+  loadUsers(tab);
+}
+
+// Hamburger
+document.getElementById('hamburger').addEventListener('click', () => {
+  document.getElementById('sidebar').classList.toggle('open');
+});
+
+loadStats();
+loadUsers('pending');
+</script>
+</body>
+</html>

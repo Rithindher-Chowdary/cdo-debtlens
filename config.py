@@ -7,12 +7,8 @@ class Config:
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
     ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls'}
 
-    # MySQL
-    MYSQL_HOST     = os.environ.get('MYSQL_HOST', 'localhost')
-    MYSQL_USER     = os.environ.get('MYSQL_USER', 'root')
-    MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD', 'password')
-    MYSQL_DB       = os.environ.get('MYSQL_DB', 'cdo_debt_db')
-    MYSQL_PORT     = int(os.environ.get('MYSQL_PORT', 3306))
+    # PostgreSQL — Render provides DATABASE_URL automatically
+    DATABASE_URL = os.environ.get('DATABASE_URL', '')
 
     # Resend
     RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')

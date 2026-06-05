@@ -1,20 +1,9 @@
 -- =============================================================
--- CDO Technical Debt Assessment — Database Schema
--- Run once to initialise the database
+-- CDO Technical Debt Assessment — PostgreSQL Schema
 -- =============================================================
 
-CREATE DATABASE IF NOT EXISTS cdo_debt_db
-    CHARACTER SET utf8mb4
-    COLLATE utf8mb4_unicode_ci;
-
-USE cdo_debt_db;
-
--- -------------------------------------------------------
--- Table: assessments
--- Master record for each file upload + analysis run
--- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS assessments (
-    id                  INT AUTO_INCREMENT PRIMARY KEY,
+    id                  SERIAL PRIMARY KEY,
     assessment_name     VARCHAR(255) NOT NULL,
     filename            VARCHAR(255) NOT NULL,
     original_filename   VARCHAR(255) NOT NULL,
@@ -22,86 +11,82 @@ CREATE TABLE IF NOT EXISTS assessments (
     file_type           VARCHAR(20) DEFAULT 'csv',
     total_rows          INT DEFAULT 0,
     total_columns       INT DEFAULT 0,
+    duplicate_rows      INT DEFAULT 0,
     debt_score          DECIMAL(5,2) DEFAULT 0.00,
-    debt_category       ENUM('Low','Medium','High') DEFAULT 'Low',
-    status              ENUM('processing','completed','failed') DEFAULT 'processing',
-    created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    notes               TEXT,
-    INDEX idx_created   (created_at),
-    INDEX idx_category  (debt_category),
-    INDEX idx_status    (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    debt_category       VARCHAR(20) DEFAULT 'Low',
+    status              VARCHAR(20) DEFAULT 'processing',
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    notes               TEXT
+);
 
--- -------------------------------------------------------
--- Table: quality_metrics
--- Per-column quality breakdown for each assessment
--- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS quality_metrics (
-    id                  INT AUTO_INCREMENT PRIMARY KEY,
-    assessment_id       INT NOT NULL,
-    column_name         VARCHAR(255) NOT NULL,
-    data_type           VARCHAR(50),
-    total_values        INT DEFAULT 0,
-    missing_count       INT DEFAULT 0,
-    missing_pct         DECIMAL(5,2) DEFAULT 0.00,
-    duplicate_count     INT DEFAULT 0,
-    empty_string_count  INT DEFAULT 0,
+    id                   SERIAL PRIMARY KEY,
+    assessment_id        INT NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+    column_name          VARCHAR(255) NOT NULL,
+    data_type            VARCHAR(50),
+    total_values         INT DEFAULT 0,
+    missing_count        INT DEFAULT 0,
+    missing_pct          DECIMAL(5,2) DEFAULT 0.00,
+    duplicate_count      INT DEFAULT 0,
+    empty_string_count   INT DEFAULT 0,
     invalid_format_count INT DEFAULT 0,
-    unique_count        INT DEFAULT 0,
-    min_value           VARCHAR(255),
-    max_value           VARCHAR(255),
-    mean_value          DECIMAL(15,4),
-    std_dev             DECIMAL(15,4),
-    outlier_count       INT DEFAULT 0,
-    column_debt_score   DECIMAL(5,2) DEFAULT 0.00,
-    FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE,
-    INDEX idx_assessment (assessment_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    unique_count         INT DEFAULT 0,
+    min_value            VARCHAR(255),
+    max_value            VARCHAR(255),
+    mean_value           DECIMAL(15,4),
+    std_dev              DECIMAL(15,4),
+    outlier_count        INT DEFAULT 0,
+    column_debt_score    DECIMAL(5,2) DEFAULT 0.00
+);
 
--- -------------------------------------------------------
--- Table: debt_breakdown
--- High-level category scores for radar/bar charts
--- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS debt_breakdown (
-    id                  INT AUTO_INCREMENT PRIMARY KEY,
-    assessment_id       INT NOT NULL,
-    category            VARCHAR(100) NOT NULL,
-    score               DECIMAL(5,2) DEFAULT 0.00,
-    weight              DECIMAL(4,2) DEFAULT 1.00,
-    affected_columns    INT DEFAULT 0,
-    description         TEXT,
-    FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE,
-    INDEX idx_assessment (assessment_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id               SERIAL PRIMARY KEY,
+    assessment_id    INT NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+    category         VARCHAR(100) NOT NULL,
+    score            DECIMAL(5,2) DEFAULT 0.00,
+    weight           DECIMAL(4,2) DEFAULT 1.00,
+    affected_columns INT DEFAULT 0,
+    description      TEXT
+);
 
--- -------------------------------------------------------
--- Table: recommendations
--- Actionable items generated per assessment
--- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS recommendations (
-    id                  INT AUTO_INCREMENT PRIMARY KEY,
-    assessment_id       INT NOT NULL,
-    priority            ENUM('Critical','High','Medium','Low') DEFAULT 'Medium',
-    category            VARCHAR(100),
-    title               VARCHAR(500) NOT NULL,
-    description         TEXT,
-    effort              ENUM('Quick Win','Medium Effort','Long Term') DEFAULT 'Medium Effort',
-    impact              ENUM('High','Medium','Low') DEFAULT 'Medium',
-    column_ref          VARCHAR(255),
-    FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE,
-    INDEX idx_assessment (assessment_id),
-    INDEX idx_priority   (priority)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id            SERIAL PRIMARY KEY,
+    assessment_id INT NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+    priority      VARCHAR(20) DEFAULT 'Medium',
+    category      VARCHAR(100),
+    title         VARCHAR(500) NOT NULL,
+    description   TEXT,
+    effort        VARCHAR(50) DEFAULT 'Medium Effort',
+    impact        VARCHAR(20) DEFAULT 'Medium',
+    column_ref    VARCHAR(255)
+);
 
--- -------------------------------------------------------
--- Table: dataset_samples
--- First 20 rows stored as JSON for preview
--- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS dataset_samples (
-    id                  INT AUTO_INCREMENT PRIMARY KEY,
-    assessment_id       INT NOT NULL,
-    sample_data         LONGTEXT,   -- JSON array of rows
-    column_headers      TEXT,       -- JSON array of column names
-    FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id             SERIAL PRIMARY KEY,
+    assessment_id  INT NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+    sample_data    TEXT,
+    column_headers TEXT
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id            SERIAL PRIMARY KEY,
+    full_name     VARCHAR(255) NOT NULL,
+    email         VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role          VARCHAR(20) DEFAULT 'user',
+    status        VARCHAR(20) DEFAULT 'pending',
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    approved_at   TIMESTAMP,
+    approved_by   INT
+);
+
+CREATE TABLE IF NOT EXISTS otp_codes (
+    id         SERIAL PRIMARY KEY,
+    email      VARCHAR(255) NOT NULL,
+    otp        VARCHAR(6) NOT NULL,
+    purpose    VARCHAR(20) DEFAULT 'signup',
+    used       SMALLINT DEFAULT 0,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

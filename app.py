@@ -572,7 +572,7 @@ def api_assessment(assessment_id):
         "SELECT * FROM debt_breakdown WHERE assessment_id=%s", (assessment_id,))
     recommendations = db.fetchall(
         """SELECT * FROM recommendations WHERE assessment_id=%s
-           ORDER BY FIELD(priority,'Critical','High','Medium','Low')""",
+           ORDER BY CASE priority WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 WHEN 'Low' THEN 4 ELSE 5 END""",
         (assessment_id,))
     sample          = db.fetchone(
         "SELECT * FROM dataset_samples WHERE assessment_id=%s", (assessment_id,))

@@ -52,14 +52,11 @@ def admin_required(f):
     return decorated
 
 
-# ─── Mail Helper ────────────────────────────────────────────
-
-def _resend_client():
-    resend.api_key = os.environ.get('RESEND_API_KEY', '')
-    return resend
+# ─── Email Helpers (Resend) ──────────────────────────────────
 
 def send_otp_email(to_email, otp, purpose='signup'):
     try:
+        resend.api_key = app.config['RESEND_API_KEY']
         subject = 'CDO DebtLens — Your OTP Code'
         body = f"""
         <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
@@ -75,8 +72,7 @@ def send_otp_email(to_email, otp, purpose='signup'):
           <p style="color:#64748b;font-size:12px">If you didn't request this, ignore this email.</p>
         </div>
         """
-        r = _resend_client()
-        r.Emails.send({
+        resend.Emails.send({
             "from":    "CDO DebtLens <onboarding@resend.dev>",
             "to":      [to_email],
             "subject": subject,
@@ -90,22 +86,21 @@ def send_otp_email(to_email, otp, purpose='signup'):
 
 def send_admin_notification(user_name, user_email):
     try:
-        r = _resend_client()
-        r.Emails.send({
+        resend.api_key = app.config['RESEND_API_KEY']
+        resend.Emails.send({
             "from":    "CDO DebtLens <onboarding@resend.dev>",
             "to":      [app.config['ADMIN_EMAIL']],
-            "subject": f"CDO DebtLens — New User Pending Approval: {user_name}",
+            "subject": f"CDO DebtLens — New User Pending: {user_name}",
             "html":    f"""
             <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
                         background:#0f172a;color:#f0f4ff;border-radius:12px">
               <h2 style="color:#4f8ef7">New User Pending Approval</h2>
-              <p style="color:#94a3b8">A new user has signed up and is waiting for your approval.</p>
               <div style="background:#1a2237;border-radius:10px;padding:20px;margin:20px 0">
                 <p><strong>Name:</strong> {user_name}</p>
                 <p><strong>Email:</strong> {user_email}</p>
                 <p><strong>Time:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
               </div>
-              <p style="color:#94a3b8">Please login to the admin panel to approve or reject.</p>
+              <p style="color:#94a3b8">Login to the admin panel to approve or reject.</p>
             </div>
             """,
         })
@@ -115,20 +110,21 @@ def send_admin_notification(user_name, user_email):
 
 def send_approval_email(to_email, user_name, approved=True):
     try:
-        r = _resend_client()
-        r.Emails.send({
+        resend.api_key = app.config['RESEND_API_KEY']
+        resend.Emails.send({
             "from":    "CDO DebtLens <onboarding@resend.dev>",
             "to":      [to_email],
-            "subject": "CDO DebtLens — Account Approved!" if approved else "CDO DebtLens — Account Request Update",
+            "subject": "CDO DebtLens — Account Approved!" if approved else "CDO DebtLens — Account Update",
             "html":    f"""
             <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
                         background:#0f172a;color:#f0f4ff;border-radius:12px">
               <h2 style="color:{'#22c55e' if approved else '#ef4444'}">
                 {"Account Approved!" if approved else "Account Not Approved"}
               </h2>
-              <p style="color:#94a3b8">
-                Hi {user_name}, {"your CDO DebtLens account has been approved. You can now login." 
-                if approved else "unfortunately your account request was not approved. Please contact the administrator."}
+              <p style="color:#94a3b8">Hi {user_name},
+                {"your account has been approved. You can now login."
+                 if approved else
+                 "your account request was not approved. Contact the administrator."}
               </p>
             </div>
             """,
@@ -147,8 +143,7 @@ def allowed_file(filename):
     return ('.' in filename and
             filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS'])
 
-
-def load_dataframe(filepath: str) -> pd.DataFrame:
+def load_dataframe(filepath):
     ext = filepath.rsplit('.', 1)[1].lower()
     if ext == 'csv':
         try:
@@ -202,27 +197,23 @@ def api_signup():
     if existing:
         return jsonify({"error": "Email already registered"}), 400
 
-    # Generate and store OTP
     otp        = generate_otp()
     expires_at = datetime.now() + timedelta(minutes=app.config['OTP_EXPIRY_MINUTES'])
 
-    # Store signup data temporarily in session
     session['signup_pending'] = {
         'full_name':     full_name,
         'email':         email,
         'password_hash': generate_password_hash(password),
     }
 
-    # Save OTP to DB
     db.execute(
-        """INSERT INTO otp_codes (email, otp, purpose, expires_at)
-           VALUES (%s, %s, 'signup', %s)""",
+        "INSERT INTO otp_codes (email, otp, purpose, expires_at) VALUES (%s,%s,'signup',%s)",
         (email, otp, expires_at)
     )
 
     sent = send_otp_email(email, otp, purpose='signup')
     if not sent:
-        return jsonify({"error": "Failed to send OTP email. Check mail config."}), 500
+        return jsonify({"error": "Failed to send OTP. Check RESEND_API_KEY."}), 500
 
     return jsonify({"success": True, "message": "OTP sent to your email"})
 
@@ -247,7 +238,6 @@ def api_verify_otp():
     if datetime.now() > record['expires_at']:
         return jsonify({"error": "OTP has expired. Please request a new one."}), 400
 
-    # Mark OTP as used
     db.execute("UPDATE otp_codes SET used=1 WHERE id=%s", (record['id'],))
 
     if purpose == 'signup':
@@ -255,15 +245,11 @@ def api_verify_otp():
         if not pending or pending['email'] != email:
             return jsonify({"error": "Session expired. Please sign up again."}), 400
 
-        # Create user with pending status
         db.execute(
-            """INSERT INTO users (full_name, email, password_hash, role, status)
-               VALUES (%s, %s, %s, 'user', 'pending')""",
+            "INSERT INTO users (full_name, email, password_hash, role, status) VALUES (%s,%s,%s,'user','pending')",
             (pending['full_name'], pending['email'], pending['password_hash'])
         )
         session.pop('signup_pending', None)
-
-        # Notify admin
         send_admin_notification(pending['full_name'], pending['email'])
 
         return jsonify({
@@ -307,13 +293,11 @@ def api_login():
     if user['status'] == 'rejected':
         return jsonify({"error": "Your account has been rejected. Contact administrator."}), 403
 
-    # Send OTP for 2FA
     otp        = generate_otp()
     expires_at = datetime.now() + timedelta(minutes=app.config['OTP_EXPIRY_MINUTES'])
 
     db.execute(
-        """INSERT INTO otp_codes (email, otp, purpose, expires_at)
-           VALUES (%s, %s, 'login', %s)""",
+        "INSERT INTO otp_codes (email, otp, purpose, expires_at) VALUES (%s,%s,'login',%s)",
         (email, otp, expires_at)
     )
 
@@ -321,7 +305,7 @@ def api_login():
 
     sent = send_otp_email(email, otp, purpose='login')
     if not sent:
-        return jsonify({"error": "Failed to send OTP. Check mail config."}), 500
+        return jsonify({"error": "Failed to send OTP. Check RESEND_API_KEY."}), 500
 
     return jsonify({"success": True, "message": "OTP sent to your email"})
 
@@ -336,8 +320,7 @@ def api_resend_otp():
     expires_at = datetime.now() + timedelta(minutes=app.config['OTP_EXPIRY_MINUTES'])
 
     db.execute(
-        """INSERT INTO otp_codes (email, otp, purpose, expires_at)
-           VALUES (%s, %s, %s, %s)""",
+        "INSERT INTO otp_codes (email, otp, purpose, expires_at) VALUES (%s,%s,%s,%s)",
         (email, otp, purpose, expires_at)
     )
 
@@ -367,7 +350,6 @@ def api_approve_user(user_id):
     user = db.fetchone("SELECT * FROM users WHERE id=%s", (user_id,))
     if not user:
         return jsonify({"error": "User not found"}), 404
-
     db.execute(
         "UPDATE users SET status='approved', approved_at=%s, approved_by=%s WHERE id=%s",
         (datetime.now(), session['user_id'], user_id)
@@ -382,7 +364,6 @@ def api_reject_user(user_id):
     user = db.fetchone("SELECT * FROM users WHERE id=%s", (user_id,))
     if not user:
         return jsonify({"error": "User not found"}), 404
-
     db.execute("UPDATE users SET status='rejected' WHERE id=%s", (user_id,))
     send_approval_email(user['email'], user['full_name'], approved=False)
     return jsonify({"success": True})
@@ -416,28 +397,23 @@ def api_admin_stats():
 def index():
     return render_template('index.html')
 
-
 @app.route('/dashboard/<int:assessment_id>')
 @login_required
 def dashboard(assessment_id):
-    assessment = db.fetchone(
-        "SELECT * FROM assessments WHERE id = %s", (assessment_id,))
+    assessment = db.fetchone("SELECT * FROM assessments WHERE id=%s", (assessment_id,))
     if not assessment:
         abort(404)
     return render_template('dashboard.html', assessment=assessment)
-
 
 @app.route('/history')
 @login_required
 def history():
     return render_template('history.html')
 
-
 @app.route('/report/<int:assessment_id>')
 @login_required
 def report_page(assessment_id):
-    assessment = db.fetchone(
-        "SELECT * FROM assessments WHERE id = %s", (assessment_id,))
+    assessment = db.fetchone("SELECT * FROM assessments WHERE id=%s", (assessment_id,))
     if not assessment:
         abort(404)
     return render_template('report.html', assessment=assessment)
@@ -465,13 +441,12 @@ def api_upload():
     f.save(save_path)
 
     file_size   = os.path.getsize(save_path)
-    assess_name = (request.form.get('assessment_name') or
-                   original_name.rsplit('.', 1)[0])
+    assess_name = (request.form.get('assessment_name') or original_name.rsplit('.', 1)[0])
 
     assessment_id = db.execute(
         """INSERT INTO assessments
            (assessment_name, filename, original_filename, file_size, file_type, status)
-           VALUES (%s, %s, %s, %s, %s, 'processing')""",
+           VALUES (%s,%s,%s,%s,%s,'processing')""",
         (assess_name, unique_name, original_name, file_size, ext)
     )
 
@@ -481,10 +456,11 @@ def api_upload():
 
         db.execute(
             """UPDATE assessments
-               SET total_rows=%s, total_columns=%s, duplicate_rows=%s, debt_score=%s,
-                   debt_category=%s, status='completed'
+               SET total_rows=%s, total_columns=%s, duplicate_rows=%s,
+                   debt_score=%s, debt_category=%s, status='completed'
                WHERE id=%s""",
-            (result['total_rows'], result['total_columns'], result['potential_duplicates'],
+            (result['total_rows'], result['total_columns'],
+             result['potential_duplicates'],
              result['debt_score'], result['debt_category'], assessment_id)
         )
 
@@ -493,8 +469,7 @@ def api_upload():
             m['column_name'], m['data_type'], m['total_values'],
             m['missing_count'], m['missing_pct'], m['duplicate_count'],
             m['empty_string_count'], m['invalid_format_count'],
-            m['unique_count'],
-            m.get('min_value'), m.get('max_value'),
+            m['unique_count'], m.get('min_value'), m.get('max_value'),
             m.get('mean_value'), m.get('std_dev'),
             m['outlier_count'], m['column_debt_score']
         ) for m in result['col_metrics']]
@@ -510,37 +485,24 @@ def api_upload():
             cm_rows
         )
 
-        bd_rows = [(
-            assessment_id,
-            b['category'], b['score'], b['weight'], b['affected_columns']
-        ) for b in result['breakdown']]
         db.execute_many(
-            """INSERT INTO debt_breakdown
-               (assessment_id, category, score, weight, affected_columns)
-               VALUES (%s,%s,%s,%s,%s)""",
-            bd_rows
+            "INSERT INTO debt_breakdown (assessment_id,category,score,weight,affected_columns) VALUES (%s,%s,%s,%s,%s)",
+            [(assessment_id, b['category'], b['score'], b['weight'], b['affected_columns'])
+             for b in result['breakdown']]
         )
 
-        rec_rows = [(
-            assessment_id,
-            r['priority'], r['category'], r['title'],
-            r['description'], r['effort'], r['impact'],
-            r.get('column_ref', '')
-        ) for r in result['recommendations']]
         db.execute_many(
             """INSERT INTO recommendations
-               (assessment_id, priority, category, title,
-                description, effort, impact, column_ref)
+               (assessment_id,priority,category,title,description,effort,impact,column_ref)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-            rec_rows
+            [(assessment_id, r['priority'], r['category'], r['title'],
+              r['description'], r['effort'], r['impact'], r.get('column_ref',''))
+             for r in result['recommendations']]
         )
 
         db.execute(
-            """INSERT INTO dataset_samples (assessment_id, sample_data, column_headers)
-               VALUES (%s, %s, %s)""",
-            (assessment_id,
-             json.dumps(result['sample_data']),
-             json.dumps(result['column_headers']))
+            "INSERT INTO dataset_samples (assessment_id,sample_data,column_headers) VALUES (%s,%s,%s)",
+            (assessment_id, json.dumps(result['sample_data']), json.dumps(result['column_headers']))
         )
 
         return jsonify({
@@ -572,7 +534,7 @@ def api_assessment(assessment_id):
         "SELECT * FROM debt_breakdown WHERE assessment_id=%s", (assessment_id,))
     recommendations = db.fetchall(
         """SELECT * FROM recommendations WHERE assessment_id=%s
-           ORDER BY CASE priority WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 WHEN 'Low' THEN 4 ELSE 5 END""",
+           ORDER BY FIELD(priority,'Critical','High','Medium','Low')""",
         (assessment_id,))
     sample          = db.fetchone(
         "SELECT * FROM dataset_samples WHERE assessment_id=%s", (assessment_id,))
@@ -663,7 +625,7 @@ def api_delete_assessment(assessment_id):
         return jsonify({"error": "Not found"}), 404
 
     try:
-        for table in ['quality_metrics', 'debt_breakdown', 'recommendations', 'dataset_samples']:
+        for table in ['quality_metrics','debt_breakdown','recommendations','dataset_samples']:
             db.execute(f"DELETE FROM {table} WHERE assessment_id=%s", (assessment_id,))
 
         fp = os.path.join(app.config['UPLOAD_FOLDER'], a['filename'])

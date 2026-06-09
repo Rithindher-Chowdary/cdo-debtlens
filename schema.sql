@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS assessments (
     created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     notes               TEXT,
+    user_id             INT,
+    INDEX idx_user      (user_id)
     INDEX idx_created   (created_at),
     INDEX idx_category  (debt_category),
     INDEX idx_status    (status)

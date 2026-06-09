@@ -445,9 +445,9 @@ def api_upload():
 
     assessment_id = db.execute(
         """INSERT INTO assessments
-           (assessment_name, filename, original_filename, file_size, file_type, status)
-           VALUES (%s,%s,%s,%s,%s,'processing')""",
-        (assess_name, unique_name, original_name, file_size, ext)
+           (assessment_name, filename, original_filename, file_size, file_type, status, user_id)
+           VALUES (%s,%s,%s,%s,%s,'processing',%s)""",
+        (assess_name, unique_name, original_name, file_size, ext, session['user_id'])
     )
 
     try:
@@ -523,7 +523,8 @@ def api_upload():
 @app.route('/api/assessment/<int:assessment_id>')
 @login_required
 def api_assessment(assessment_id):
-    a = db.fetchone("SELECT * FROM assessments WHERE id=%s", (assessment_id,))
+    a = db.fetchone("SELECT * FROM assessments WHERE id=%s AND user_id=%s",
+                    (assessment_id, session['user_id']))
     if not a:
         return jsonify({"error": "Not found"}), 404
 
@@ -559,22 +560,25 @@ def api_history():
     rows = db.fetchall(
         """SELECT id, assessment_name, original_filename, debt_score,
                   debt_category, total_rows, total_columns, created_at, status
-           FROM assessments WHERE status='completed'
+           FROM assessments WHERE status='completed' AND user_id=%s
            ORDER BY created_at DESC LIMIT %s OFFSET %s""",
-        (per_page, offset))
+        (session['user_id'], per_page, offset))
 
     total = db.fetchone(
-        "SELECT COUNT(*) AS cnt FROM assessments WHERE status='completed'")['cnt']
+        "SELECT COUNT(*) AS cnt FROM assessments WHERE status='completed' AND user_id=%s",
+        (session['user_id'],))['cnt']
 
     trend = db.fetchall(
         """SELECT debt_score, debt_category, created_at
-           FROM assessments WHERE status='completed'
-           ORDER BY created_at DESC LIMIT 30""")
+           FROM assessments WHERE status='completed' AND user_id=%s
+           ORDER BY created_at DESC LIMIT 30""",
+        (session['user_id'],))
 
     dist = db.fetchall(
         """SELECT debt_category, COUNT(*) AS cnt
-           FROM assessments WHERE status='completed'
-           GROUP BY debt_category""")
+           FROM assessments WHERE status='completed' AND user_id=%s
+           GROUP BY debt_category""",
+        (session['user_id'],))
 
     return jsonify({
         "assessments":  [_serial(r) for r in rows],
@@ -589,7 +593,8 @@ def api_history():
 @app.route('/api/assessment/<int:assessment_id>/download')
 @login_required
 def api_download_report(assessment_id):
-    a = db.fetchone("SELECT * FROM assessments WHERE id=%s", (assessment_id,))
+    a = db.fetchone("SELECT * FROM assessments WHERE id=%s AND user_id=%s",
+                    (assessment_id, session['user_id']))
     if not a:
         return jsonify({"error": "Not found"}), 404
 
@@ -620,12 +625,13 @@ def api_download_report(assessment_id):
 @app.route('/api/assessment/<int:assessment_id>', methods=['DELETE'])
 @login_required
 def api_delete_assessment(assessment_id):
-    a = db.fetchone("SELECT filename FROM assessments WHERE id=%s", (assessment_id,))
+    a = db.fetchone("SELECT filename FROM assessments WHERE id=%s AND user_id=%s",
+                    (assessment_id, session['user_id']))
     if not a:
         return jsonify({"error": "Not found"}), 404
 
     try:
-        for table in ['quality_metrics','debt_breakdown','recommendations','dataset_samples']:
+        for table in ['quality_metrics', 'debt_breakdown', 'recommendations', 'dataset_samples']:
             db.execute(f"DELETE FROM {table} WHERE assessment_id=%s", (assessment_id,))
 
         fp = os.path.join(app.config['UPLOAD_FOLDER'], a['filename'])
@@ -645,7 +651,8 @@ def api_stats():
     stats = db.fetchone(
         """SELECT COUNT(*) AS total_assessments, AVG(debt_score) AS avg_score,
                   SUM(total_rows) AS total_rows_analysed, MAX(created_at) AS last_run
-           FROM assessments WHERE status='completed'""")
+           FROM assessments WHERE status='completed' AND user_id=%s""",
+        (session['user_id'],))
     return jsonify(_serial(stats) if stats else {})
 
 

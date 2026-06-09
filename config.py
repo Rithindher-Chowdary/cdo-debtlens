@@ -14,9 +14,13 @@ class Config:
     MYSQL_DB       = os.environ.get('MYSQL_DB', 'cdo_debt_db')
     MYSQL_PORT     = int(os.environ.get('MYSQL_PORT', 3306))
 
-    # Resend (email)
-    RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
-    ADMIN_EMAIL    = os.environ.get('ADMIN_EMAIL', '')
+    # Brevo SMTP
+    BREVO_SMTP_HOST     = os.environ.get('BREVO_SMTP_HOST', 'smtp-relay.brevo.com')
+    BREVO_SMTP_PORT     = os.environ.get('BREVO_SMTP_PORT', '587')
+    BREVO_SMTP_USER     = os.environ.get('BREVO_SMTP_USER', '')
+    BREVO_SMTP_PASSWORD = os.environ.get('BREVO_SMTP_PASSWORD', '')
+    BREVO_SENDER_EMAIL  = os.environ.get('BREVO_SENDER_EMAIL', '')
+    ADMIN_EMAIL         = os.environ.get('ADMIN_EMAIL', '')
 
     # OTP expiry in minutes
     OTP_EXPIRY_MINUTES = 10

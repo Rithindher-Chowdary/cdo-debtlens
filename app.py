@@ -8,7 +8,9 @@ import json
 import uuid
 import random
 import string
-import resend
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 import traceback
 from datetime import datetime, timedelta
 from functools import wraps
@@ -52,85 +54,83 @@ def admin_required(f):
     return decorated
 
 
-# ─── Email Helpers (Resend) ──────────────────────────────────
+# ─── Email Helpers (Brevo SMTP) ─────────────────────────────
 
-def send_otp_email(to_email, otp, purpose='signup'):
+def _send_email(to_email, subject, html_body):
+    """Core email sender using Brevo SMTP."""
     try:
-        resend.api_key = app.config['RESEND_API_KEY']
-        subject = 'CDO DebtLens — Your OTP Code'
-        body = f"""
-        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
-                    background:#0f172a;color:#f0f4ff;border-radius:12px">
-          <h2 style="color:#4f8ef7;margin-bottom:8px">CDO DebtLens</h2>
-          <p style="color:#94a3b8">{"Verify your email to complete signup" if purpose == "signup" else "Your login verification code"}</p>
-          <div style="background:#1a2237;border-radius:10px;padding:24px;
-                      text-align:center;margin:24px 0">
-            <p style="color:#94a3b8;margin-bottom:8px;font-size:13px">Your OTP Code</p>
-            <div style="font-size:36px;font-weight:800;letter-spacing:12px;color:#4f8ef7">{otp}</div>
-            <p style="color:#64748b;font-size:12px;margin-top:12px">Expires in 10 minutes</p>
-          </div>
-          <p style="color:#64748b;font-size:12px">If you didn't request this, ignore this email.</p>
-        </div>
-        """
-        resend.Emails.send({
-            "from":    "CDO DebtLens <onboarding@resend.dev>",
-            "to":      [to_email],
-            "subject": subject,
-            "html":    body,
-        })
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From']    = f"CDO DebtLens <{app.config['BREVO_SENDER_EMAIL']}>"
+        msg['To']      = to_email
+        msg.attach(MIMEText(html_body, 'html'))
+
+        with smtplib.SMTP(app.config['BREVO_SMTP_HOST'],
+                          int(app.config['BREVO_SMTP_PORT'])) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(app.config['BREVO_SMTP_USER'],
+                         app.config['BREVO_SMTP_PASSWORD'])
+            server.sendmail(app.config['BREVO_SMTP_USER'], to_email, msg.as_string())
         return True
     except Exception as e:
         print(f"Mail error: {e}")
         return False
 
 
+def send_otp_email(to_email, otp, purpose='signup'):
+    subject = 'CDO DebtLens — Your OTP Code'
+    body = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
+                background:#0f172a;color:#f0f4ff;border-radius:12px">
+      <h2 style="color:#4f8ef7;margin-bottom:8px">CDO DebtLens</h2>
+      <p style="color:#94a3b8">{"Verify your email to complete signup" if purpose == "signup" else "Your login verification code"}</p>
+      <div style="background:#1a2237;border-radius:10px;padding:24px;
+                  text-align:center;margin:24px 0">
+        <p style="color:#94a3b8;margin-bottom:8px;font-size:13px">Your OTP Code</p>
+        <div style="font-size:36px;font-weight:800;letter-spacing:12px;color:#4f8ef7">{otp}</div>
+        <p style="color:#64748b;font-size:12px;margin-top:12px">Expires in 10 minutes</p>
+      </div>
+      <p style="color:#64748b;font-size:12px">If you didn't request this, ignore this email.</p>
+    </div>
+    """
+    return _send_email(to_email, subject, body)
+
+
 def send_admin_notification(user_name, user_email):
-    try:
-        resend.api_key = app.config['RESEND_API_KEY']
-        resend.Emails.send({
-            "from":    "CDO DebtLens <onboarding@resend.dev>",
-            "to":      [app.config['ADMIN_EMAIL']],
-            "subject": f"CDO DebtLens — New User Pending: {user_name}",
-            "html":    f"""
-            <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
-                        background:#0f172a;color:#f0f4ff;border-radius:12px">
-              <h2 style="color:#4f8ef7">New User Pending Approval</h2>
-              <div style="background:#1a2237;border-radius:10px;padding:20px;margin:20px 0">
-                <p><strong>Name:</strong> {user_name}</p>
-                <p><strong>Email:</strong> {user_email}</p>
-                <p><strong>Time:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
-              </div>
-              <p style="color:#94a3b8">Login to the admin panel to approve or reject.</p>
-            </div>
-            """,
-        })
-    except Exception as e:
-        print(f"Admin notify error: {e}")
+    body = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
+                background:#0f172a;color:#f0f4ff;border-radius:12px">
+      <h2 style="color:#4f8ef7">New User Pending Approval</h2>
+      <div style="background:#1a2237;border-radius:10px;padding:20px;margin:20px 0">
+        <p><strong>Name:</strong> {user_name}</p>
+        <p><strong>Email:</strong> {user_email}</p>
+        <p><strong>Time:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
+      </div>
+      <p style="color:#94a3b8">Login to the admin panel to approve or reject.</p>
+    </div>
+    """
+    _send_email(app.config['ADMIN_EMAIL'],
+                f"CDO DebtLens — New User Pending: {user_name}", body)
 
 
 def send_approval_email(to_email, user_name, approved=True):
-    try:
-        resend.api_key = app.config['RESEND_API_KEY']
-        resend.Emails.send({
-            "from":    "CDO DebtLens <onboarding@resend.dev>",
-            "to":      [to_email],
-            "subject": "CDO DebtLens — Account Approved!" if approved else "CDO DebtLens — Account Update",
-            "html":    f"""
-            <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
-                        background:#0f172a;color:#f0f4ff;border-radius:12px">
-              <h2 style="color:{'#22c55e' if approved else '#ef4444'}">
-                {"Account Approved!" if approved else "Account Not Approved"}
-              </h2>
-              <p style="color:#94a3b8">Hi {user_name},
-                {"your account has been approved. You can now login."
-                 if approved else
-                 "your account request was not approved. Contact the administrator."}
-              </p>
-            </div>
-            """,
-        })
-    except Exception as e:
-        print(f"Approval email error: {e}")
+    body = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
+                background:#0f172a;color:#f0f4ff;border-radius:12px">
+      <h2 style="color:{'#22c55e' if approved else '#ef4444'}">
+        {"Account Approved!" if approved else "Account Not Approved"}
+      </h2>
+      <p style="color:#94a3b8">Hi {user_name},
+        {"your account has been approved. You can now login."
+         if approved else
+         "your account request was not approved. Contact the administrator."}
+      </p>
+    </div>
+    """
+    _send_email(to_email,
+                "CDO DebtLens — Account Approved!" if approved else "CDO DebtLens — Account Update",
+                body)
 
 
 def generate_otp():

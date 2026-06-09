@@ -81,16 +81,20 @@ def generate_pdf(assessment: dict, col_metrics: list,
     story.append(Paragraph(f"Generated: {datetime.now().strftime('%B %d, %Y  %H:%M')}", sub_s))
     story.append(HRFlowable(width="100%", thickness=2, color=C_PRIMARY, spaceAfter=12))
 
-    # Score summary table - changed "Duplicate Rows" to "Potential Duplicates"
+    # Score summary table — FIX: cast to int to avoid 25.0 display
+    total_rows_val = int(assessment.get('total_rows', 0))
+    total_cols_val = int(assessment.get('total_columns', 0))
+    dup_rows       = int(assessment.get('duplicate_rows', 0))
+
     summary_data = [
         ["Debt Score", "Category", "Total Rows", "Total Columns", "Potential Duplicates"],
         [
-            Paragraph(f'<font size="20" color="{cat_c.hexval()}">'
-                      f'<b>{score:.1f}</b></font> <font size="10">/100</font>', body_s),
+            Paragraph(f'<font size="16" color="{cat_c.hexval()}">'
+                      f'<b>{score:.1f}</b></font><br/><font size="8" color="#64748b">/100</font>', body_s),
             Paragraph(f'<font color="{cat_c.hexval()}"><b>{cat}</b></font>', body_s),
-            f"{assessment.get('total_rows', 0):,}",
-            str(assessment.get('total_columns', 0)),
-            f"{dup_rows} ({ (dup_rows / max(assessment.get('total_rows', 1), 1) * 100):.1f}%)" if dup_rows > 0 else "0",
+            f"{total_rows_val:,}",
+            str(total_cols_val),
+            f"{dup_rows} ({(dup_rows / max(total_rows_val, 1) * 100):.1f}%)" if dup_rows > 0 else "0",
         ]
     ]
     t = Table(summary_data, colWidths=[3.5*cm, 3*cm, 3*cm, 3*cm, 4*cm])
@@ -102,7 +106,7 @@ def generate_pdf(assessment: dict, col_metrics: list,
         ('BACKGROUND', (0,1), (-1,1), C_LIGHT),
         ('ALIGN',      (0,0), (-1,-1), 'CENTER'),
         ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
-        ('ROWHEIGHT',  (0,1), (-1,1), 40),
+        ('ROWHEIGHT',  (0,1), (-1,1), 50),
         ('GRID',       (0,0), (-1,-1), 0.5, C_BORDER),
         ('ROUNDEDCORNERS', [4]),
     ]))
@@ -118,7 +122,7 @@ def generate_pdf(assessment: dict, col_metrics: list,
             b.get('category', ''),
             Paragraph(f'<font color="{_score_color(s).hexval()}"><b>{s:.1f}</b></font>', body_s),
             f"{float(b.get('weight',0))*100:.0f}%",
-            str(b.get('affected_columns', 0)),
+            str(int(float(b.get('affected_columns', 0)))),
         ])
     t2 = Table(bd_data, colWidths=[8*cm, 3*cm, 3*cm, 3*cm])
     t2.setStyle(TableStyle([
@@ -142,9 +146,9 @@ def generate_pdf(assessment: dict, col_metrics: list,
             Paragraph(m.get('column_name',''), small_s),
             m.get('data_type',''),
             f"{m.get('missing_pct',0):.1f}%",
-            str(m.get('empty_string_count',0)),
-            str(m.get('invalid_format_count',0)),
-            str(m.get('outlier_count',0)),
+            str(int(float(m.get('empty_string_count', 0)))),
+            str(int(float(m.get('invalid_format_count', 0)))),
+            str(int(float(m.get('outlier_count', 0)))),
             Paragraph(f'<font color="{_score_color(s).hexval()}"><b>{s:.1f}</b></font>', small_s),
         ])
     t3 = Table(cm_data, colWidths=[5*cm, 2*cm, 2.2*cm, 1.8*cm, 2.2*cm, 1.8*cm, 2.2*cm])
